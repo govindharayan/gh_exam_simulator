@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GATE Exam Platform - Secure</title>
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        :root {
+            --primary: #2c3e50; --secondary: #3498db; --accent: #e74c3c;
+            --success: #2ecc71; --warning: #f39c12; --dark: #1a1a1a;
+            --radius: 8px; --shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        body { background: #f5f7fa; color: #333; overflow-x: hidden; }
+
+        /* --- Layout --- */
+        .container { display: flex; height: 100vh; transition: all 0.3s; overflow: hidden; }
+        .sidebar { width: 280px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; z-index: 20; height: 100%; }
+        .main-content { flex: 1; padding: 1.5rem; display: flex; flex-direction: column; position: relative; background: #f5f7fa; }
+
+        /* --- PDF Viewer --- */
+        .pdf-viewer { flex: 1; background: #525659; border-radius: var(--radius); position: relative; overflow: hidden; display: flex; flex-direction: column; }
+        .pdf-iframe { width: 100%; height: 100%; border: none; background: white; }
+        .pdf-placeholder { position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white; text-align:center; }
+
+        /* --- Options Panel --- */
+        .question-panel { background: white; padding: 1rem; border-radius: var(--radius); margin-top: 1rem; box-shadow: var(--shadow); flex-shrink: 0; }
+        .options-container { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+        
+        .option { padding: 0.6rem; border: 2px solid #eee; border-radius: var(--radius); cursor: pointer; display: flex; align-items: center; gap: 0.8rem; font-size: 0.9rem; transition: 0.2s; }
+        .option:hover { background: #f8f9fa; border-color: #ccc; }
+        .option.selected { border-color: var(--secondary); background: rgba(52,152,219,0.1); }
+        .option-circle { width: 24px; height: 24px; border: 2px solid #ccc; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 0.8rem; }
+        
+        /* Type Styling */
+        .type-MCQ .option-circle { border-radius: 50%; }
+        .type-MSQ .option-circle { border-radius: 4px; }
+        .option.selected .option-circle { background: var(--secondary); border-color: var(--secondary); color: white; }
+
+        /* NAT Input */
+        .nat-input { width: 100%; padding: 10px; font-size: 1.1rem; border: 2px solid #ccc; border-radius: 4px; font-family: monospace; outline: none; }
+        .nat-input:focus { border-color: var(--secondary); }
+
+        /* --- Sidebar & Grid --- */
+        .grid-container { flex: 1; overflow-y: auto; padding: 1rem; border-top: 1px solid #eee; }
+        .question-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+        .qno-btn { aspect-ratio: 1; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+        .qno-btn.active { background: var(--secondary); color: white; border-color: var(--secondary); transform: scale(1.05); }
+        .qno-btn.answered { background: var(--success); color: white; border-color: var(--success); }
+        .qno-btn.marked { background: var(--warning); color: white; border-color: var(--warning); }
+
+        /* --- Modals & Popups --- */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 2000; }
+        .modal-content { background: white; width: 500px; padding: 2rem; border-radius: var(--radius); animation: slideIn 0.3s; }
+        .input-group { margin-bottom: 1rem; }
+        .input-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        .input-group input, .input-group select { width: 100%; padding: 0.8rem; border: 1px solid #ddd; border-radius: 4px; }
+        
+        .btn { padding: 0.6rem 1.2rem; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+        .btn-primary { background: var(--secondary); }
+        .btn-success { background: var(--success); }
+        .btn-danger { background: var(--accent); }
+        .btn-warning { background: var(--warning); }
+        .btn-secondary { background: #7f8c8d; }
+
+        /* Calculator */
+        .calc-popup { 
+            position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); 
+            width: 320px; background: #222; box-shadow: 0 10px 40px rgba(0,0,0,0.5); 
+            z-index: 1500; display: none; border-radius: 10px; overflow: hidden; border: 1px solid #444; 
+        }
+        .calc-display { background: #333; color: white; padding: 15px; text-align: right; font-size: 1.6rem; border-bottom: 1px solid #444; height: 70px; font-family: monospace; white-space: nowrap; overflow-x: auto; }
+        .calc-keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: #444; }
+        .calc-btn { padding: 12px 0; border: none; background: #222; color: #fff; cursor: pointer; font-size: 0.9rem; transition: 0.1s; }
+        .calc-btn:hover { background: #333; }
+        .calc-btn.fn { color: var(--secondary); font-weight: bold; }
+        .calc-btn.eq { background: var(--secondary); }
+
+        /* --- Annotation & Toolbar --- */
+        .canvas-layer { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9000; }
+        
+        .unified-toolbar { 
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); 
+            background: rgba(20, 20, 20, 0.95); padding: 8px 20px; border-radius: 40px; 
+            display: none; z-index: 9999; gap: 15px; align-items: center; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1);
+        }
+        .tool-btn { 
+            background: none; border: none; color: #aaa; font-size: 1.3rem; 
+            cursor: pointer; padding: 10px; transition: 0.2s; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; width: 45px; height: 45px;
+        }
+        .tool-btn:hover { color: white; background: rgba(255,255,255,0.1); }
+        .tool-btn.active { color: var(--secondary); background: rgba(52,152,219,0.2); box-shadow: 0 0 15px var(--secondary); }
+        .tool-divider { width: 1px; height: 25px; background: #555; }
+
+        /* --- Warnings & Blocking --- */
+        .warning-toast {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            background: var(--accent); color: white; padding: 10px 25px; border-radius: 30px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 10001; font-weight: bold;
+            display: none; animation: slideDown 0.3s ease;
+        }
+
+        .blocking-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; color: white; z-index: 20000;
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+        }
+
+        /* --- EXAM MODE STYLES --- */
+        body.exam-mode { overflow: hidden; }
+        body.exam-mode .container { flex-direction: row; }
+        body.exam-mode .main-content { order: 1; flex: 0 0 80%; max-width: 80%; padding: 0; height: 100vh; }
+        body.exam-mode .pdf-viewer { border-radius: 0; height: 100vh; }
+        body.exam-mode .header { display: none; } 
+        body.exam-mode .sidebar { order: 2; flex: 0 0 20%; height: 100vh; background: #f0f2f5; border-left: 2px solid #ccc; padding: 0; }
+        body.exam-mode .sidebar-header, body.exam-mode .mode-selector { display: none; }
+        
+        #timerBox { background: var(--primary); color: white; padding: 10px; text-align: center; font-size: 1.5rem; font-weight: bold; font-family: monospace; flex-shrink: 0; }
+        body.exam-mode .question-panel { margin: 0; border-radius: 0; border-bottom: 1px solid #ccc; background: white; box-shadow: none; padding: 10px; max-height: 40vh; overflow-y: auto; }
+
+        .lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; color: white; z-index: 10000; display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+
+        @keyframes slideDown { from { top: -50px; } to { top: 20px; } }
+        @keyframes slideIn { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <!-- Blocking Overlay (Violations) -->
+    <div class="blocking-overlay" id="violationScreen">
+        <i class="fas fa-hand-paper fa-5x" style="color: var(--accent); margin-bottom: 20px;"></i>
+        <h2>Exam Paused: Violation Detected</h2>
+        <p>You exited Full Screen or switched tabs.</p>
+        <button class="btn btn-primary" onclick="resumeFullScreen()">Resume Exam</button>
+    </div>
+
+    <!-- Warning Toast -->
+    <div class="warning-toast" id="warningToast">
+        <i class="fas fa-exclamation-triangle"></i> Warning 1/5: Do not exit Full Screen!
+    </div>
+
+    <!-- Setup Modal -->
+    <div class="modal" id="setupModal">
+        <div class="modal-content">
+            <h2 style="color: var(--primary); margin-bottom: 20px;"><i class="fas fa-sliders-h"></i> Exam Setup</h2>
+            <div class="input-group">
+                <label>Question Paper</label>
+                <input type="file" id="pdfUpload" accept=".pdf">
+                <small style="color: var(--secondary); cursor: pointer;" onclick="loadDemoPDF()"><u>Load Demo Paper</u></small>
+            </div>
+            <div class="input-group">
+                <div style="display: flex; gap: 10px;">
+                    <div style="flex:1">
+                        <label>Total Questions</label>
+                        <input type="number" id="numQuestions" value="30" min="1">
+                    </div>
+                    <div style="flex:1">
+                        <label>Duration (Min)</label>
+                        <input type="number" id="examDuration" value="180">
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="startApp('practice')">Practice</button>
+                <button class="btn btn-success" onclick="initiateExamMode()">Start Exam</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exam Lock Screen -->
+    <div class="lock-screen" id="lockScreen">
+        <i class="fas fa-shield-alt fa-4x" style="color: var(--secondary); margin-bottom: 20px;"></i>
+        <h2>Secure Environment</h2>
+        <ul style="text-align: left; background: #222; padding: 20px 40px; border-radius: 8px; margin: 20px 0; line-height: 1.8;">
+            <li>Full Screen Mode is mandatory.</li>
+            <li>Tab switching triggers warning.</li>
+            <li>5 Warnings = Auto Submit.</li>
+            <li><b>Secret Exit:</b> Type <code>igiveupgate</code> in NAT & click Next.</li>
+        </ul>
+        <button class="btn btn-danger" onclick="confirmStartExam()">Enter Exam Mode</button>
+    </div>
+
+    <!-- Scientific Calculator -->
+    <div class="calc-popup" id="calculator">
+        <div class="calc-display" id="calcScreen">0</div>
+        <div class="calc-keys" id="calcKeys"><!-- JS populated --></div>
+    </div>
+
+    <!-- Canvas -->
+    <canvas id="canvasLayer" class="canvas-layer"></canvas>
+
+    <!-- Toolbar -->
+    <div class="unified-toolbar" id="mainToolbar">
+        <button class="tool-btn active" id="toolMouse" title="Cursor" onclick="toggleTool('none')"><i class="fas fa-mouse-pointer"></i></button>
+        <div class="tool-divider"></div>
+        <button class="tool-btn" id="toolPen" title="Pen" onclick="toggleTool('permanent')"><i class="fas fa-pen"></i></button>
+        <button class="tool-btn" id="toolLaser" title="Laser (5s)" onclick="toggleTool('laser')"><i class="fas fa-magic"></i></button>
+        <button class="tool-btn" title="Undo" onclick="undoAnnotation()"><i class="fas fa-undo"></i></button>
+        <div class="tool-divider"></div>
+        <button class="tool-btn" id="toolCalc" title="Calc" onclick="toggleCalculator()"><i class="fas fa-calculator"></i></button>
+        <div class="tool-divider"></div>
+        <button class="tool-btn" title="Save" onclick="downloadSnapshot()"><i class="fas fa-camera"></i></button>
+        <button class="tool-btn" title="Clear" onclick="clearScreen()" style="color:#e74c3c"><i class="fas fa-trash"></i></button>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container" id="appContainer">
+        <!-- Sidebar -->
+        <div class="sidebar" id="mainSidebar">
+            <div class="sidebar-header" style="padding: 1rem; border-bottom: 1px solid #eee;">
+                <h3>GATE Prep</h3>
+            </div>
+            <div id="timerBox" style="display: none;">00:00:00</div>
+            <div class="mode-selector" style="padding: 0.5rem 1rem;">
+                <select style="width: 100%; padding: 5px;" onchange="switchMode(this.value)">
+                    <option value="practice">Practice Mode</option>
+                    <option value="test">Test Mode</option>
+                </select>
+            </div>
+            <div id="examSidebarTarget"></div>
+            <div class="grid-container">
+                <h4 style="margin-bottom: 10px; color: #666;">Question Palette</h4>
+                <div class="question-grid" id="qGrid"></div>
+            </div>
+            <div style="padding: 1rem; border-top: 1px solid #eee; background: white;">
+                <button class="btn btn-success" style="width: 100%; margin-bottom: 5px;" onclick="submitExam()">Submit Exam</button>
+                <button class="btn btn-secondary" style="width: 100%; font-size: 0.8rem;" onclick="downloadResponseSheet()"><i class="fas fa-file-pdf"></i> Download Response</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content" id="mainArea">
+            <div class="header">
+                <h2 id="headerTitle">Question 1</h2>
+            </div>
+            <div class="pdf-viewer">
+                <iframe class="pdf-iframe" id="pdfViewer" src=""></iframe>
+                <div id="pdfPlaceholder" style="position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white; text-align:center;">
+                    <i class="fas fa-file-pdf fa-3x"></i><br>No PDF Loaded
+                </div>
+            </div>
+
+            <!-- Options Panel -->
+            <div class="question-panel" id="optionsPanel">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h4 id="optionTitle">Select Answer</h4>
+                    <select id="typeSelector" style="padding: 2px; font-size: 0.8rem;" onchange="changeQuestionType(this.value)">
+                        <option value="MCQ">MCQ</option>
+                        <option value="MSQ">MSQ</option>
+                        <option value="NAT">NAT</option>
+                    </select>
+                </div>
+                <div class="options-container" id="optionsList"></div>
+                <div style="display: flex; justify-content: space-between; margin-top: 1rem;">
+                    <button class="btn btn-secondary" onclick="navQuestion(-1)">Prev</button>
+                    <button class="btn btn-warning" onclick="toggleMark()">Mark</button>
+                    <button class="btn btn-primary" onclick="navQuestion(1)">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const appState = {
+            questions: [], currentIdx: 0, totalQ: 30, timeLeft: 0, timerInterval: null, isExamMode: false,
+            warningCount: 0, maxWarnings: 5,
+            isDrawing: false, penType: 'none', strokeHistory: [], ctx: null, calcOpen: false
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initScientificCalculator();
+            initCanvas();
+            document.getElementById('pdfUpload').addEventListener('change', e => {
+                if(e.target.files[0]) {
+                    document.getElementById('pdfViewer').src = URL.createObjectURL(e.target.files[0]);
+                    document.getElementById('pdfPlaceholder').style.display = 'none';
+                }
+            });
+            document.addEventListener('keydown', handleGlobalKeys);
+            document.addEventListener('contextmenu', e => { if(appState.isExamMode) e.preventDefault(); });
+            // Strict Security Listeners
+            document.addEventListener('fullscreenchange', checkFullscreen);
+            document.addEventListener('visibilitychange', checkVisibility);
+            window.addEventListener('blur', checkFocus);
+        });
+
+        function loadDemoPDF() {
+            document.getElementById('pdfViewer').src = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
+            document.getElementById('pdfPlaceholder').style.display = 'none';
+        }
+
+        // --- Exam & Security Logic ---
+        function startApp(mode) {
+            appState.totalQ = parseInt(document.getElementById('numQuestions').value);
+            appState.timeLeft = parseInt(document.getElementById('examDuration').value) * 60;
+            appState.questions = Array(appState.totalQ).fill().map((_, i) => ({
+                id: i+1, type: 'MCQ', selected: [], natAnswer: '', marked: false, status: 'Not Answered'
+            }));
+            document.getElementById('setupModal').style.display = 'none';
+            initGrid(); renderQuestion();
+            if(mode === 'practice') switchMode('practice');
+        }
+
+        function initiateExamMode() {
+            document.getElementById('setupModal').style.display = 'none';
+            document.getElementById('lockScreen').style.display = 'flex';
+        }
+
+        function confirmStartExam() {
+            startApp('exam');
+            document.getElementById('lockScreen').style.display = 'none';
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().then(enterSecuredInterface).catch(() => alert("Fullscreen Required"));
+            }
+        }
+
+        function enterSecuredInterface() {
+            appState.isExamMode = true;
+            document.body.classList.add('exam-mode');
+            const target = document.getElementById('examSidebarTarget');
+            target.appendChild(document.getElementById('optionsPanel'));
+            document.getElementById('timerBox').style.display = 'block';
+            document.getElementById('mainToolbar').style.display = 'flex';
+            startTimer();
+        }
+
+        function triggerWarning(reason) {
+            if(!appState.isExamMode) return;
+            appState.warningCount++;
+            const msg = document.getElementById('warningToast');
+            msg.innerText = `Warning ${appState.warningCount}/${appState.maxWarnings}: ${reason}`;
+            msg.style.display = 'block';
+            setTimeout(() => msg.style.display = 'none', 4000);
+
+            if(appState.warningCount >= appState.maxWarnings) {
+                alert("Maximum warnings reached. Submitting Exam.");
+                submitExam();
+            }
+        }
+
+        function checkFullscreen() {
+            if (appState.isExamMode && !document.fullscreenElement) {
+                triggerWarning("Exit Full Screen");
+                document.getElementById('violationScreen').style.display = 'flex';
+            }
+        }
+
+        function resumeFullScreen() {
+            document.documentElement.requestFullscreen().then(() => {
+                document.getElementById('violationScreen').style.display = 'none';
+            });
+        }
+
+        function checkVisibility() {
+            if(appState.isExamMode && document.hidden) triggerWarning("Tab Switch Detected");
+        }
+
+        function checkFocus() {
+            if(appState.isExamMode) triggerWarning("Focus Lost");
+        }
+
+        // --- UI Logic ---
+        function initGrid() {
+            const grid = document.getElementById('qGrid');
+            grid.innerHTML = '';
+            appState.questions.forEach((q, i) => {
+                const btn = document.createElement('button');
+                btn.className = 'qno-btn';
+                btn.textContent = i + 1;
+                btn.onclick = () => { appState.currentIdx = i; renderQuestion(); };
+                btn.id = `qbtn-${i}`;
+                grid.appendChild(btn);
+            });
+        }
+
+        function renderQuestion() {
+            const q = appState.questions[appState.currentIdx];
+            document.getElementById('headerTitle').textContent = `Question ${appState.currentIdx + 1}`;
+            document.getElementById('typeSelector').value = q.type;
+            const panel = document.getElementById('optionsPanel');
+            panel.className = `question-panel type-${q.type}`;
+            const list = document.getElementById('optionsList');
+            list.innerHTML = '';
+
+            if (q.type === 'NAT') {
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = `<label>Type Answer:</label>`;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'nat-input';
+                input.value = q.natAnswer;
+                input.placeholder = "______________";
+                input.oninput = (e) => {
+                    q.natAnswer = e.target.value;
+                    q.status = q.natAnswer.trim() ? 'Answered' : 'Not Answered';
+                    updateGrid();
+                };
+                wrapper.appendChild(input);
+                list.appendChild(wrapper);
+            } else {
+                ['A', 'B', 'C', 'D'].forEach(opt => {
+                    const div = document.createElement('div');
+                    div.className = `option ${q.selected.includes(opt) ? 'selected' : ''}`;
+                    div.innerHTML = `<div class="option-circle">${opt}</div> <span>Option Content...</span>`;
+                    div.onclick = () => selectAnswer(opt);
+                    list.appendChild(div);
+                });
+            }
+            updateGrid();
+        }
+
+        function changeQuestionType(newType) {
+            const q = appState.questions[appState.currentIdx];
+            q.type = newType;
+            q.selected = []; q.natAnswer = ''; q.status = 'Not Answered';
+            renderQuestion();
+        }
+
+        function selectAnswer(opt) {
+            const q = appState.questions[appState.currentIdx];
+            if (q.type === 'MCQ') q.selected = q.selected.includes(opt) ? [] : [opt];
+            else if (q.type === 'MSQ') {
+                if (q.selected.includes(opt)) q.selected = q.selected.filter(x => x !== opt);
+                else q.selected.push(opt);
+            }
+            q.status = q.selected.length > 0 ? 'Answered' : 'Not Answered';
+            renderQuestion();
+        }
+
+        function updateGrid() {
+            appState.questions.forEach((q, i) => {
+                const btn = document.getElementById(`qbtn-${i}`);
+                btn.className = 'qno-btn';
+                if (i === appState.currentIdx) btn.classList.add('active');
+                if (q.marked) btn.classList.add('marked');
+                else if (q.status === 'Answered') btn.classList.add('answered');
+            });
+        }
+
+        function navQuestion(dir) {
+            // Check for IGIVEUPGATE Magic Word
+            const curr = appState.questions[appState.currentIdx];
+            if (dir === 1 && curr.type === 'NAT' && curr.natAnswer.toLowerCase().trim() === 'igiveupgate') {
+                if(confirm("Exit exam immediately (Magic Word Detected)?")) {
+                    document.exitFullscreen();
+                    location.reload(); // Hard exit
+                    return;
+                }
+            }
+
+            const newIdx = appState.currentIdx + dir;
+            if (newIdx >= 0 && newIdx < appState.totalQ) {
+                appState.currentIdx = newIdx;
+                renderQuestion();
+            }
+        }
+
+        function toggleMark() {
+            const q = appState.questions[appState.currentIdx];
+            q.marked = !q.marked;
+            updateGrid();
+        }
+
+        function startTimer() {
+            if(appState.timerInterval) clearInterval(appState.timerInterval);
+            appState.timerInterval = setInterval(() => {
+                appState.timeLeft--;
+                const h = Math.floor(appState.timeLeft/3600).toString().padStart(2,'0');
+                const m = Math.floor((appState.timeLeft%3600)/60).toString().padStart(2,'0');
+                const s = (appState.timeLeft%60).toString().padStart(2,'0');
+                document.getElementById('timerBox').textContent = `${h}:${m}:${s}`;
+                if(appState.timeLeft <= 0) submitExam();
+            }, 1000);
+        }
+
+        // --- Tools ---
+        function initCanvas() {
+            const c = document.getElementById('canvasLayer');
+            c.width = window.innerWidth; c.height = window.innerHeight;
+            appState.ctx = c.getContext('2d');
+            window.addEventListener('resize', () => { c.width = window.innerWidth; c.height = window.innerHeight; redrawHistory(); });
+            c.addEventListener('mousedown', startDraw); c.addEventListener('mousemove', draw); c.addEventListener('mouseup', endDraw);
+        }
+        function toggleTool(targetType) {
+            if(appState.penType === targetType) setPen('none');
+            else setPen(targetType);
+        }
+        function setPen(type) {
+            appState.penType = type;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            if(type === 'none') document.getElementById('toolMouse').classList.add('active');
+            if(type === 'permanent') document.getElementById('toolPen').classList.add('active');
+            if(type === 'laser') document.getElementById('toolLaser').classList.add('active');
+            document.getElementById('canvasLayer').style.pointerEvents = type === 'none' ? 'none' : 'auto';
+        }
+        function startDraw(e) {
+            if(appState.penType === 'none') return;
+            appState.isDrawing = true; const x = e.clientX, y = e.clientY;
+            appState.ctx.beginPath(); appState.ctx.moveTo(x, y);
+            appState.ctx.lineWidth = appState.penType === 'laser' ? 4 : 2;
+            appState.ctx.strokeStyle = appState.penType === 'laser' ? 'rgba(231,76,60,0.8)' : '#000';
+            appState.ctx.lineCap = 'round';
+            if(appState.penType === 'permanent') appState.currentStroke = [{x,y}];
+        }
+        function draw(e) {
+            if(!appState.isDrawing) return;
+            const x = e.clientX, y = e.clientY; appState.ctx.lineTo(x, y); appState.ctx.stroke();
+            if(appState.penType === 'permanent') appState.currentStroke.push({x,y});
+        }
+        function endDraw() {
+            if(!appState.isDrawing) return;
+            appState.isDrawing = false;
+            if(appState.penType === 'permanent') appState.strokeHistory.push([...appState.currentStroke]);
+            else if(appState.penType === 'laser') setTimeout(() => { appState.ctx.clearRect(0,0,window.innerWidth, window.innerHeight); redrawHistory(); }, 5000);
+        }
+        function redrawHistory() {
+            appState.ctx.clearRect(0,0,window.innerWidth, window.innerHeight);
+            appState.strokeHistory.forEach(path => {
+                appState.ctx.beginPath(); appState.ctx.moveTo(path[0].x, path[0].y);
+                appState.ctx.lineWidth = 2; appState.ctx.strokeStyle = '#000';
+                path.forEach(p => appState.ctx.lineTo(p.x, p.y)); appState.ctx.stroke();
+            });
+        }
+        function undoAnnotation() { if(appState.strokeHistory.length > 0) { appState.strokeHistory.pop(); redrawHistory(); } }
+        function clearScreen() { appState.strokeHistory = []; redrawHistory(); }
+        
+        // Silent Download
+        function downloadSnapshot() {
+            const link = document.createElement('a');
+            link.download = 'My_Notes.png';
+            link.href = document.getElementById('canvasLayer').toDataURL();
+            link.click();
+            // No Alert
+        }
+
+        // --- Calc ---
+        function initScientificCalculator() {
+            const keys = ['sin','cos','tan','log','ln','(',')','^','√','π','7','8','9','/','DEL','4','5','6','*','C','1','2','3','-','Ans','0','.','e','+','='];
+            const div = document.getElementById('calcKeys');
+            const disp = document.getElementById('calcScreen');
+            keys.forEach(k => {
+                const b = document.createElement('button'); b.className = 'calc-btn'; b.innerText = k;
+                if(['sin','cos','tan','log','ln','^','√'].includes(k)) b.classList.add('fn');
+                if(k === '=') b.classList.add('eq');
+                b.onclick = () => {
+                    if(k === 'C') disp.innerText = '0';
+                    else if(k === 'DEL') disp.innerText = disp.innerText.slice(0, -1) || '0';
+                    else if(k === '=') {
+                        try {
+                            const expr = disp.innerText.replace(/sin/g, 'Math.sin').replace(/cos/g, 'Math.cos').replace(/tan/g, 'Math.tan').replace(/log/g, 'Math.log10').replace(/ln/g, 'Math.log').replace(/√/g, 'Math.sqrt').replace(/\^/g, '**').replace(/π/g, 'Math.PI').replace(/e/g, 'Math.E');
+                            disp.innerText = eval(expr);
+                        } catch { disp.innerText = 'Error'; }
+                    } else disp.innerText = disp.innerText === '0' ? k : disp.innerText + k;
+                };
+                div.appendChild(b);
+            });
+        }
+        function toggleCalculator() {
+            const box = document.getElementById('calculator'); const btn = document.getElementById('toolCalc');
+            if(appState.calcOpen) { box.style.display = 'none'; btn.classList.remove('active'); }
+            else { box.style.display = 'block'; btn.classList.add('active'); }
+            appState.calcOpen = !appState.calcOpen;
+        }
+
+        function handleGlobalKeys(e) {
+            if(e.ctrlKey && e.key === 'z') { e.preventDefault(); undoAnnotation(); }
+            if(appState.isExamMode && ['F11','F12','Escape'].includes(e.key)) e.preventDefault();
+        }
+
+        function submitExam() { 
+            if(confirm("Submit Exam?")) {
+                if(appState.isExamMode) document.exitFullscreen();
+                downloadResponseSheet();
+                alert("Exam Submitted!");
+                location.reload();
+            }
+        }
+        function downloadResponseSheet() {
+            const { jsPDF } = window.jspdf; const doc = new jsPDF();
+            doc.text("GATE Response Sheet", 14, 15);
+            const tableData = appState.questions.map(q => [q.id, q.type, q.type === 'NAT' ? q.natAnswer : q.selected.join(', ') || '-', q.status]);
+            doc.autoTable({ head: [['Q.No', 'Type', 'Answer', 'Status']], body: tableData, startY: 25 });
+            doc.save('Response_Sheet.pdf');
+        }
+    </script>
+</body>
+</html>
