@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GATE Exam Platform - Secure Production v1.7</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        :root {
+            --primary: #2c3e50; --secondary: #3498db; --accent: #e74c3c;
+            --success: #2ecc71; --warning: #f39c12; --dark: #1a1a1a;
+            --grey-bg: #f5f7fa; --radius: 6px;
+        }
+
+        body { background: var(--grey-bg); color: #333; overflow: hidden; height: 100vh; width: 100vw; }
+
+        /* --- Layout Structures --- */
+        .container { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+        
+        /* Main Content (PDF Only) - 80% */
+        .main-content { flex: 0 0 80%; height: 100vh; background: #525659; position: relative; overflow: hidden; }
+        .pdf-iframe { width: 100%; height: 100%; border: none; background: white; }
+
+        /* Sidebar (Everything else) - 20% */
+        .sidebar { flex: 0 0 20%; background: white; border-left: 2px solid #ddd; display: flex; flex-direction: column; z-index: 20; height: 100vh; overflow-y: auto; }
+
+        /* --- Sidebar Modules --- */
+        #timerBox { background: var(--primary); color: white; padding: 12px; text-align: center; font-size: 1.5rem; font-weight: bold; font-family: monospace; }
+        
+        .question-module { padding: 15px; border-bottom: 1px solid #eee; background: white; }
+        .type-switcher { display: flex; gap: 4px; background: #f0f0f0; padding: 3px; border-radius: 6px; margin-top: 8px; }
+        .type-btn { flex: 1; border: none; padding: 5px; font-size: 0.7rem; font-weight: bold; cursor: pointer; border-radius: 4px; background: transparent; color: #666; }
+        .type-btn.active { background: white; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        .options-container { display: flex; flex-direction: column; gap: 8px; margin: 15px 0; }
+        .option { padding: 10px; border: 1px solid #eee; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 0.85rem; transition: 0.2s; }
+        .option:hover { background: #f9f9f9; }
+        .option.selected { border-color: var(--secondary); background: rgba(52,152,219,0.05); }
+        .option-circle { width: 22px; height: 22px; border: 1px solid #ccc; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 0.75rem; flex-shrink: 0; }
+        .type-MCQ .option-circle { border-radius: 50%; }
+        .type-MSQ .option-circle { border-radius: 4px; }
+        .option.selected .option-circle { background: var(--secondary); border-color: var(--secondary); color: white; }
+
+        .nat-input { width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 5px; font-family: monospace; outline: none; }
+
+        /* Modern Nav Buttons inside Sidebar */
+        .nav-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        .btn-nav { height: 40px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 5px; color: white; transition: 0.2s; }
+        .btn-prev { background: #5d6d7e; }
+        .btn-mark { background: var(--warning); }
+        .btn-next { background: var(--secondary); grid-column: span 2; font-size: 0.9rem; }
+        .btn-nav:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        /* Palette Grid */
+        .palette-module { padding: 15px; flex: 1; overflow-y: auto; }
+        .question-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+        .qno-btn { aspect-ratio: 1; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer; font-weight: 600; font-size: 0.8rem; }
+        .qno-btn.active { background: var(--secondary); color: white; border-color: var(--secondary); }
+        .qno-btn.answered { background: var(--success); color: white; border-color: var(--success); }
+        .qno-btn.marked { background: var(--warning); color: white; border-color: var(--warning); }
+
+        /* --- Tools & Modals --- */
+        .canvas-layer { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9000; }
+        .unified-toolbar { position: fixed; bottom: 20px; left: 40%; transform: translateX(-50%); background: rgba(20, 20, 20, 0.95); padding: 8px 20px; border-radius: 40px; display: none; z-index: 9999; gap: 12px; align-items: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .tool-btn { background: none; border: none; color: #aaa; font-size: 1.1rem; cursor: pointer; width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .tool-btn.active { color: var(--secondary); background: rgba(52,152,219,0.2); }
+        .color-opt { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; border: 1px solid transparent; }
+        .color-opt.active { border-color: white; transform: scale(1.2); }
+
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center; z-index: 10000; }
+        .modal-content { background: white; width: 550px; padding: 2rem; border-radius: 10px; }
+        .instruction-box { background: #f8f9fa; border: 1px solid #ddd; padding: 15px; border-radius: 5px; margin: 15px 0; font-size: 0.85rem; line-height: 1.6; }
+
+        .calc-popup { position: fixed; bottom: 80px; left: 40%; transform: translateX(-50%); width: 300px; background: #222; z-index: 1500; display: none; border-radius: 10px; overflow: hidden; }
+        .calc-display { background: #333; color: white; padding: 15px; text-align: right; font-size: 1.4rem; font-family: monospace; height: 60px; }
+        .calc-keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: #444; }
+        .calc-btn { padding: 10px 0; border: none; background: #222; color: #fff; cursor: pointer; font-size: 0.8rem; }
+
+        .blocking-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: black; color: white; z-index: 30000; display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <!-- Security Overlay -->
+    <div class="blocking-overlay" id="violationScreen">
+        <i class="fas fa-shield-alt fa-4x" style="color:var(--accent); margin-bottom: 20px;"></i>
+        <h2>Security Protocol Triggered</h2>
+        <p>You exited Full Screen or changed tabs.</p>
+        <button class="btn-nav btn-next" style="width:200px; margin-top:20px;" onclick="resumeFullScreen()">Resume Exam</button>
+    </div>
+
+    <!-- Step 1: Configuration -->
+    <div class="modal" id="setupModal">
+        <div class="modal-content">
+            <h2 style="color: var(--primary); margin-bottom: 20px;"><i class="fas fa-cog"></i> Initial Setup</h2>
+            <div style="margin-bottom: 15px;">
+                <label style="font-weight:600">Question Paper (PDF)</label>
+                <input type="file" id="pdfUpload" accept=".pdf" style="margin-top:5px; width:100%">
+            </div>
+            <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                <div style="flex:1"><label style="font-weight:600">Questions</label><input type="number" id="numQuestions" value="65" style="width: 100%; padding: 10px; border:1px solid #ddd; border-radius:4px"></div>
+                <div style="flex:1"><label style="font-weight:600">Minutes</label><input type="number" id="examDuration" value="180" style="width: 100%; padding: 10px; border:1px solid #ddd; border-radius:4px"></div>
+            </div>
+            <button class="btn-nav btn-next" onclick="showInstructions()">Continue <i class="fas fa-arrow-right"></i></button>
+            <p style="text-align:center; margin-top:15px; font-size:0.8rem; color:#888; cursor:pointer" onclick="loadDemoPDF()"><u>Load Demo PDF</u></p>
+        </div>
+    </div>
+
+    <!-- Step 2: Instructions -->
+    <div class="modal" id="instructionsModal" style="display:none">
+        <div class="modal-content">
+            <h2 style="color: var(--primary);"><i class="fas fa-info-circle"></i> General Instructions</h2>
+            <div class="instruction-box">
+                <ul style="list-style: none;">
+                    <li><i class="fas fa-check-circle" style="color:var(--success)"></i> PDF is displayed on the left (80% width).</li>
+                    <li><i class="fas fa-check-circle" style="color:var(--success)"></i> Controls and Palette are in the right sidebar.</li>
+                    <li><i class="fas fa-check-circle" style="color:var(--success)"></i> <b>Laser Tool:</b> Temporary magic wand. Hold <b>Ctrl</b> to lock it.</li>
+                    <li><i class="fas fa-exclamation-triangle" style="color:var(--accent)"></i> Tab switching or Full Screen exit = Security Violation.</li>
+                </ul>
+            </div>
+            <label style="display:flex; align-items:center; gap:10px; margin-bottom:20px; font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="agreeCheck" style="width:18px; height:18px;"> I am ready to begin.
+            </label>
+            <div style="display:flex; gap:10px;">
+                <button class="btn-nav btn-prev" style="width:30%" onclick="backToSetup()">Back</button>
+                <button class="btn-nav btn-next" style="width:70%" onclick="startExamMode()">Enter Exam Mode <i class="fas fa-play"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unified Tools -->
+    <div class="unified-toolbar" id="mainToolbar">
+        <button class="tool-btn active" id="toolMouse" onclick="toggleTool('none')"><i class="fas fa-mouse-pointer"></i></button>
+        <button class="tool-btn" id="toolPen" onclick="toggleTool('permanent')"><i class="fas fa-pen"></i></button>
+        <div class="color-opt active" style="background:#000" onclick="setStrokeColor('#000000', this)"></div>
+        <div class="color-opt" style="background:#00008B" onclick="setStrokeColor('#00008B', this)"></div>
+        <div class="color-opt" style="background:#006400" onclick="setStrokeColor('#006400', this)"></div>
+        <div class="color-opt" style="background:#e74c3c" onclick="setStrokeColor('#e74c3c', this)"></div>
+        <div style="width:1px; height:20px; background:#444"></div>
+        <button class="tool-btn" id="toolLaser" onclick="toggleTool('laser')"><i class="fas fa-magic"></i></button>
+        <button class="tool-btn" onclick="undoAnnotation()"><i class="fas fa-undo"></i></button>
+        <button class="tool-btn" id="toolCalc" onclick="toggleCalculator()"><i class="fas fa-calculator"></i></button>
+        <button class="tool-btn" onclick="clearScreen()" style="color:#e74c3c"><i class="fas fa-trash"></i></button>
+    </div>
+
+    <div class="calc-popup" id="calculator">
+        <div class="calc-display" id="calcScreen">0</div>
+        <div class="calc-keys" id="calcKeys"></div>
+    </div>
+
+    <canvas id="canvasLayer" class="canvas-layer"></canvas>
+
+    <div class="container">
+        <!-- Main Area (LEFT 80%) -->
+        <div class="main-content">
+            <iframe id="pdfViewer" class="pdf-iframe"></iframe>
+        </div>
+
+        <!-- Sidebar (RIGHT 20%) -->
+        <div class="sidebar">
+            <div id="timerBox">00:00:00</div>
+            
+            <!-- Question & Controls Module -->
+            <div class="question-module" id="questionPanel">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span id="curQTitle" style="font-weight:bold; font-size:1rem;">Question 1</span>
+                    <div class="type-switcher">
+                        <button class="type-btn" id="btn-MCQ" onclick="changeQuestionType('MCQ')">MCQ</button>
+                        <button class="type-btn" id="btn-MSQ" onclick="changeQuestionType('MSQ')">MSQ</button>
+                        <button class="type-btn" id="btn-NAT" onclick="changeQuestionType('NAT')">NAT</button>
+                    </div>
+                </div>
+                
+                <div id="optionsList" class="options-container"></div>
+                
+                <div class="nav-controls">
+                    <button class="btn-nav btn-prev" onclick="navQuestion(-1)"><i class="fas fa-chevron-left"></i> Prev</button>
+                    <button class="btn-nav btn-mark" onclick="toggleMark()"><i class="fas fa-flag"></i> Mark</button>
+                    <button class="btn-nav btn-next" onclick="navQuestion(1)">Save & Next <i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+
+            <!-- Palette Module -->
+            <div class="palette-module">
+                <h4 style="margin-bottom:10px; color:#555; font-size: 0.9rem;">Question Palette</h4>
+                <div class="question-grid" id="qGrid"></div>
+            </div>
+
+            <div style="padding:15px; border-top:1px solid #eee;">
+                <button class="btn-nav btn-next" style="width:100%; background:var(--success)" onclick="submitExam()">SUBMIT EXAM</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            questions: [], currentIdx: 0, totalQ: 65, timeLeft: 0,
+            isExamMode: false, warnings: 0,
+            isDrawing: false, penType: 'none', strokeHistory: [], redoHistory: [], 
+            persistentLaserHistory: [], strokeColor: '#000000', ctx: null, calcOpen: false
+        };
+
+        const canvas = document.getElementById('canvasLayer');
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight; redrawHistory();
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            state.ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+            initCalc();
+            document.getElementById('pdfUpload').addEventListener('change', e => {
+                if(e.target.files[0]) document.getElementById('pdfViewer').src = URL.createObjectURL(e.target.files[0]);
+            });
+            document.addEventListener('keydown', e => {
+                if(e.ctrlKey && e.key === 'z') { e.preventDefault(); undoAnnotation(); }
+                if(e.key === 'Control') { }
+            });
+            document.addEventListener('keyup', e => {
+                if (e.key === 'Control') { state.persistentLaserHistory = []; redrawHistory(); }
+            });
+            document.addEventListener('fullscreenchange', checkSecurity);
+            document.addEventListener('visibilitychange', checkSecurity);
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', endDraw);
+        });
+
+        function loadDemoPDF() { document.getElementById('pdfViewer').src = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"; }
+        function showInstructions() { document.getElementById('setupModal').style.display = 'none'; document.getElementById('instructionsModal').style.display = 'flex'; }
+        function backToSetup() { document.getElementById('instructionsModal').style.display = 'none'; document.getElementById('setupModal').style.display = 'flex'; }
+
+        function startExamMode() {
+            if(!document.getElementById('agreeCheck').checked) return alert("Agree to instructions.");
+            document.documentElement.requestFullscreen().then(() => {
+                state.totalQ = parseInt(document.getElementById('numQuestions').value);
+                state.timeLeft = parseInt(document.getElementById('examDuration').value) * 60;
+                state.questions = Array(state.totalQ).fill().map((_, i) => ({ id: i+1, type: 'MCQ', selected: [], nat: '', marked: false, status: 'none' }));
+                state.isExamMode = true;
+                document.getElementById('instructionsModal').style.display = 'none';
+                document.getElementById('mainToolbar').style.display = 'flex';
+                initGrid(); renderQuestion(); startTimer();
+            });
+        }
+
+        function checkSecurity() {
+            if (state.isExamMode && (!document.fullscreenElement || document.hidden)) {
+                state.warnings++;
+                document.getElementById('violationScreen').style.display = 'flex';
+                if(state.warnings >= 20) submitExam();
+            }
+        }
+
+        function resumeFullScreen() { document.documentElement.requestFullscreen().then(() => document.getElementById('violationScreen').style.display = 'none'); }
+
+        function initGrid() {
+            const grid = document.getElementById('qGrid'); grid.innerHTML = '';
+            state.questions.forEach((q, i) => {
+                const btn = document.createElement('button');
+                btn.className = 'qno-btn'; btn.textContent = i + 1; btn.id = `qbtn-${i}`;
+                btn.onclick = () => { state.currentIdx = i; renderQuestion(); };
+                grid.appendChild(btn);
+            });
+        }
+
+        function renderQuestion() {
+            const q = state.questions[state.currentIdx];
+            document.getElementById('curQTitle').textContent = `Question ${state.currentIdx + 1}`;
+            document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`btn-${q.type}`).classList.add('active');
+            const list = document.getElementById('optionsList'); list.innerHTML = '';
+
+            if (q.type === 'NAT') {
+                const input = document.createElement('input');
+                input.className = 'nat-input'; input.value = q.nat;
+                input.placeholder = "Answer...";
+                input.oninput = (e) => { q.nat = e.target.value; q.status = q.nat.trim() ? 'done' : 'none'; updateGrid(); };
+                list.appendChild(input);
+            } else {
+                ['A', 'B', 'C', 'D'].forEach(opt => {
+                    const div = document.createElement('div');
+                    div.className = `option ${q.selected.includes(opt) ? 'selected' : ''}`;
+                    div.innerHTML = `<div class="option-circle">${opt}</div> <span>Option ${opt}</span>`;
+                    div.onclick = () => {
+                        if (q.type === 'MCQ') q.selected = q.selected.includes(opt) ? [] : [opt];
+                        else q.selected.includes(opt) ? q.selected = q.selected.filter(x => x !== opt) : q.selected.push(opt);
+                        q.status = q.selected.length > 0 ? 'done' : 'none';
+                        renderQuestion();
+                    };
+                    list.appendChild(div);
+                });
+            }
+            updateGrid();
+        }
+
+        function changeQuestionType(t) { state.questions[state.currentIdx].type = t; state.questions[state.currentIdx].selected = []; renderQuestion(); }
+
+        function updateGrid() {
+            state.questions.forEach((q, i) => {
+                const btn = document.getElementById(`qbtn-${i}`);
+                if(!btn) return; btn.className = 'qno-btn';
+                if (i === state.currentIdx) btn.classList.add('active');
+                if (q.marked) btn.classList.add('marked');
+                else if (q.status === 'done') btn.classList.add('answered');
+            });
+        }
+
+        function navQuestion(dir) {
+            const curr = state.questions[state.currentIdx];
+            if (dir === 1 && curr.nat.toLowerCase().trim() === 'igiveupgate') location.reload();
+            const newIdx = state.currentIdx + dir;
+            if (newIdx >= 0 && newIdx < state.totalQ) { state.currentIdx = newIdx; renderQuestion(); }
+        }
+
+        function toggleMark() { state.questions[state.currentIdx].marked = !state.questions[state.currentIdx].marked; updateGrid(); }
+
+        function startTimer() {
+            setInterval(() => {
+                state.timeLeft--;
+                const h = Math.floor(state.timeLeft/3600).toString().padStart(2,'0');
+                const m = Math.floor((state.timeLeft%3600)/60).toString().padStart(2,'0');
+                const s = (state.timeLeft%60).toString().padStart(2,'0');
+                document.getElementById('timerBox').textContent = `${h}:${m}:${s}`;
+                if(state.timeLeft <= 0) submitExam();
+            }, 1000);
+        }
+
+        // --- Annotations ---
+        function toggleTool(type) {
+            state.penType = type;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            if(type === 'none') document.getElementById('toolMouse').classList.add('active');
+            else if(type === 'permanent') document.getElementById('toolPen').classList.add('active');
+            else document.getElementById('toolLaser').classList.add('active');
+            canvas.style.pointerEvents = type === 'none' ? 'none' : 'auto';
+        }
+
+        function setStrokeColor(c, el) {
+            state.strokeColor = c;
+            document.querySelectorAll('.color-opt').forEach(opt => opt.classList.remove('active'));
+            el.classList.add('active'); toggleTool('permanent');
+        }
+
+        function getCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
+
+        function startDraw(e) {
+            if(state.penType === 'none') return;
+            state.isDrawing = true; state.redoHistory = [];
+            const pos = getCoords(e);
+            state.ctx.beginPath(); state.ctx.moveTo(pos.x, pos.y);
+            state.currentStroke = { color: state.penType === 'laser' ? '#e74c3c' : state.strokeColor, width: state.penType === 'laser' ? 4 : 2, points: [pos] };
+        }
+
+        function draw(e) {
+            if(!state.isDrawing) return;
+            const pos = getCoords(e); state.ctx.lineTo(pos.x, pos.y);
+            state.ctx.strokeStyle = state.currentStroke.color;
+            state.ctx.lineWidth = state.currentStroke.width;
+            state.ctx.lineCap = 'round'; state.ctx.stroke();
+            state.currentStroke.points.push(pos);
+        }
+
+        function endDraw(e) {
+            if(!state.isDrawing) return;
+            state.isDrawing = false;
+            if(state.penType === 'permanent') state.strokeHistory.push(state.currentStroke);
+            else if (state.penType === 'laser') {
+                if (e.ctrlKey) state.persistentLaserHistory.push(state.currentStroke);
+                else setTimeout(() => redrawHistory(), 3000);
+            }
+        }
+
+        function redrawHistory() {
+            state.ctx.clearRect(0,0,canvas.width, canvas.height);
+            [...state.strokeHistory, ...state.persistentLaserHistory].forEach(s => {
+                state.ctx.beginPath(); state.ctx.strokeStyle = s.color;
+                state.ctx.lineWidth = s.width; state.ctx.lineCap = 'round';
+                state.ctx.moveTo(s.points[0].x, s.points[0].y);
+                s.points.forEach(p => state.ctx.lineTo(p.x, p.y)); state.ctx.stroke();
+            });
+        }
+
+        function undoAnnotation() { if(state.strokeHistory.length > 0) { state.strokeHistory.pop(); redrawHistory(); } }
+        function clearScreen() { state.strokeHistory = []; state.persistentLaserHistory = []; redrawHistory(); }
+
+        // --- Calc ---
+        function initCalc() {
+            const keys = ['sin','cos','tan','log','ln','(',')','^','√','π','7','8','9','/','DEL','4','5','6','*','C','1','2','3','-','Ans','0','.','e','+','='];
+            const div = document.getElementById('calcKeys');
+            keys.forEach(k => {
+                const b = document.createElement('button'); b.className = 'calc-btn'; b.innerText = k;
+                b.onclick = () => {
+                    const disp = document.getElementById('calcScreen');
+                    if(k === 'C') disp.innerText = '0';
+                    else if(k === 'DEL') disp.innerText = disp.innerText.slice(0, -1) || '0';
+                    else if(k === '=') {
+                        try {
+                            let expr = disp.innerText.replace(/sin/g, 'Math.sin').replace(/cos/g, 'Math.cos').replace(/tan/g, 'Math.tan').replace(/√/g, 'Math.sqrt').replace(/\^/g, '**').replace(/π/g, 'Math.PI');
+                            disp.innerText = eval(expr);
+                        } catch { disp.innerText = 'Error'; }
+                    } else disp.innerText = disp.innerText === '0' ? k : disp.innerText + k;
+                };
+                div.appendChild(b);
+            });
+        }
+
+        function toggleCalculator() {
+            state.calcOpen = !state.calcOpen;
+            document.getElementById('calculator').style.display = state.calcOpen ? 'block' : 'none';
+            document.getElementById('toolCalc').classList.toggle('active');
+        }
+
+        function submitExam() {
+            if(confirm("Submit?")) {
+                const { jsPDF } = window.jspdf; const doc = new jsPDF();
+                const tableData = state.questions.map(q => [q.id, q.type, q.type === 'NAT' ? q.nat : q.selected.join(','), q.status]);
+                doc.autoTable({ head: [['Q.No', 'Type', 'Answer', 'Status']], body: tableData });
+                doc.save('GATE_Response.pdf'); location.reload();
+            }
+        }
+    </script>
+</body>
+</html>
